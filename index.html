@@ -127,6 +127,27 @@
   .chip:hover{border-color:var(--ink)}
   .chip:disabled{opacity:.35;cursor:not-allowed}
 
+  /* repeat selector */
+  .repeat-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .rep{display:flex;flex-direction:column;align-items:stretch;gap:0;cursor:pointer;
+       border:1px solid var(--line-strong);background:var(--white);border-radius:8px;padding:6px;
+       font-family:var(--mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;
+       color:var(--ink-soft);transition:.12s}
+  .rep:hover{border-color:var(--ink)}
+  .rep.sel{border-color:var(--ink);color:var(--ink);box-shadow:0 0 0 1px var(--ink) inset}
+  .rep .rg{display:block;width:100%;height:26px;border-radius:5px;background:var(--bg);
+           border:1px solid var(--line);margin-bottom:6px;
+           background-image:radial-gradient(circle, var(--ink) 1.2px, transparent 1.5px);
+           background-size:8px 8px;background-position:2px 2px}
+  .rep[data-rep=halfdrop] .rg{
+    background-image:radial-gradient(circle, var(--ink) 1.2px, transparent 1.5px),
+                    radial-gradient(circle, var(--ink) 1.2px, transparent 1.5px);
+    background-size:16px 8px,16px 8px;background-position:2px 2px,10px 6px}
+  .rep[data-rep=brick] .rg{
+    background-image:radial-gradient(circle, var(--ink) 1.2px, transparent 1.5px),
+                    radial-gradient(circle, var(--ink) 1.2px, transparent 1.5px);
+    background-size:8px 16px,8px 16px;background-position:2px 2px,6px 10px}
+
   .swatches{display:flex;gap:7px;flex-wrap:wrap}
   .sw{width:26px;height:26px;border-radius:7px;cursor:pointer;border:1px solid var(--line-strong);transition:.12s}
   .sw:hover{transform:scale(1.08)}
@@ -269,6 +290,15 @@
         <input type="range" id="tileSize" min="128" max="1024" step="32" value="512">
       </div>
       <div class="ctrl">
+        <label>Repeat</label>
+        <div class="repeat-grid" id="repeatSel">
+          <button class="rep sel" data-rep="free"><span class="rg"></span>Free</button>
+          <button class="rep" data-rep="grid"><span class="rg"></span>Grid</button>
+          <button class="rep" data-rep="halfdrop"><span class="rg"></span>Half-drop</button>
+          <button class="rep" data-rep="brick"><span class="rg"></span>Brick</button>
+        </div>
+      </div>
+      <div class="ctrl">
         <label>Background</label>
         <div class="swatches" id="bgSwatches"></div>
       </div>
@@ -353,9 +383,11 @@ const state = {
   zoom: 1,
   pan: {x:0, y:0},
   view: {w:0, h:0},
+  repeat: 'free',        // free | grid | halfdrop | brick
   history: [],           // undo/redo stack of state snapshots
   histIndex: -1,
 };
+const GRID_DIV = 4;      // snap/overlay subdivisions for Grid mode
 let nextId = 1;
 
 /* ---------- view sizing ---------- */
@@ -390,12 +422,13 @@ function draw(){
   ectx.clearRect(0,0,state.view.w,state.view.h);
   const o = tileOrigin();
 
-  // neighbor tiles (faded) to visualise tiling
+  // neighbor tiles (faded) to visualise the chosen repeat
+  const L = lattice(), z = state.zoom;
   ectx.save();
-  for(let gy=-1; gy<=1; gy++) for(let gx=-1; gx<=1; gx++){
-    if(gx===0 && gy===0) continue;
+  for(let i=-1; i<=1; i++) for(let j=-1; j<=1; j++){
+    if(i===0 && j===0) continue;
     ectx.globalAlpha = 0.16;
-    drawTileContent(ectx, o.ox+gx*o.s, o.oy+gy*o.s, state.zoom, false);
+    drawTileContent(ectx, o.ox+(i*L.ax+j*L.bx)*z, o.oy+(i*L.ay+j*L.by)*z, z, false);
   }
   ectx.restore();
 
@@ -405,6 +438,18 @@ function draw(){
 
   // main tile content (with wrap)
   drawTileContent(ectx, o.ox, o.oy, state.zoom, false);
+
+  // grid overlay (Grid mode only)
+  if(state.repeat==='grid'){
+    ectx.save();
+    ectx.strokeStyle='rgba(255,74,28,.22)'; ectx.lineWidth=1;
+    for(let k=1;k<GRID_DIV;k++){
+      const gx=o.ox+(o.s/GRID_DIV)*k, gy=o.oy+(o.s/GRID_DIV)*k;
+      ectx.beginPath();ectx.moveTo(gx,o.oy);ectx.lineTo(gx,o.oy+o.s);ectx.stroke();
+      ectx.beginPath();ectx.moveTo(o.ox,gy);ectx.lineTo(o.ox+o.s,gy);ectx.stroke();
+    }
+    ectx.restore();
+  }
 
   // tile frame
   ectx.strokeStyle = '#111110';
@@ -417,13 +462,24 @@ function draw(){
   drawPreview();
 }
 
+/* repeat lattice basis vectors (in tile units). Determinant == T^2 so the
+   square tile is always a valid seamless fundamental domain. */
+function lattice(){
+  const T = state.tile;
+  switch(state.repeat){
+    case 'halfdrop': return {ax:T, ay:T/2, bx:0,   by:T};  // columns drop by half
+    case 'brick':    return {ax:T, ay:0,   bx:T/2, by:T};  // rows shift by half
+    default:         return {ax:T, ay:0,   bx:0,   by:T};  // free & grid (square)
+  }
+}
+
 /* draws all elements (wrapped) into a tile placed at screen (ox,oy) with scale z */
 function drawTileContent(ctx, ox, oy, z, clip){
-  const T = state.tile;
+  const T = state.tile, L = lattice();
   for(const el of state.elements){
-    // wrap offsets: draw element shifted by each neighbor so edge-crossers reappear
-    for(let dy=-1; dy<=1; dy++) for(let dx=-1; dx<=1; dx++){
-      const cx = el.x + dx*T, cy = el.y + dy*T;
+    // wrap offsets along the lattice so edge-crossers reappear correctly
+    for(let i=-1; i<=1; i++) for(let j=-1; j<=1; j++){
+      const cx = el.x + i*L.ax + j*L.bx, cy = el.y + i*L.ay + j*L.by;
       // cull: only draw if its bbox could intersect the tile
       const r = Math.hypot(el.w,el.h)/2 + 4;
       if(cx + r < 0 || cx - r > T || cy + r < 0 || cy - r > T) continue;
@@ -470,21 +526,31 @@ function drawSelection(el,o){
   ectx.restore();
 }
 
-/* ---------- preview (pure tiled render) ---------- */
+/* bake the fundamental tile (content already wrapped) into an offscreen canvas */
+function renderTileCanvas(){
+  const T=state.tile;
+  const c=document.createElement('canvas'); c.width=T; c.height=T;
+  const x=c.getContext('2d');
+  if(state.bg && state.bg!=='rgba(0,0,0,0)'){ x.fillStyle=state.bg; x.fillRect(0,0,T,T); }
+  drawTileContent(x,0,0,1,true);
+  return c;
+}
+
+/* ---------- preview (tiled along the active repeat lattice) ---------- */
 function drawPreview(){
   const pb = preview.parentElement.getBoundingClientRect();
   pctx.clearRect(0,0,pb.width,pb.height);
-  const reps=3;
-  const cell = pb.width/reps;
-  const z = cell/state.tile;
-  for(let gy=0;gy<reps;gy++) for(let gx=0;gx<reps;gx++){
-    const ox=gx*cell, oy=gy*cell;
-    pctx.fillStyle=state.bg; pctx.fillRect(ox,oy,cell,cell);
-    pctx.save();
-    pctx.beginPath();pctx.rect(ox,oy,cell,cell);pctx.clip();
-    drawTileContent(pctx, ox, oy, z, true);
-    pctx.restore();
+  if(state.bg && state.bg!=='rgba(0,0,0,0)'){ pctx.fillStyle=state.bg; pctx.fillRect(0,0,pb.width,pb.height); }
+  const reps=3, cell=pb.width/reps, z=cell/state.tile;
+  const L=lattice();
+  pctx.save();
+  pctx.beginPath();pctx.rect(0,0,pb.width,pb.height);pctx.clip();
+  const tileC=renderTileCanvas();
+  for(let i=-2;i<=reps+1;i++) for(let j=-2;j<=reps+1;j++){
+    const ox=(i*L.ax+j*L.bx)*z, oy=(i*L.ay+j*L.by)*z;
+    pctx.drawImage(tileC, ox, oy, cell, cell);
   }
+  pctx.restore();
 }
 
 /* ---------- hit testing ---------- */
@@ -501,12 +567,12 @@ function hitHandle(sx,sy){
 }
 function hitElement(sx,sy){
   const t=toTile(sx,sy);
-  const T=state.tile;
-  // check element + wrapped copies
+  const L=lattice();
+  // check element + wrapped copies along the active lattice
   for(let i=state.elements.length-1;i>=0;i--){
     const el=state.elements[i];
-    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-      const cx=el.x+dx*T, cy=el.y+dy*T;
+    for(let a=-1;a<=1;a++) for(let b=-1;b<=1;b++){
+      const cx=el.x+a*L.ax+b*L.bx, cy=el.y+a*L.ay+b*L.by;
       const lx=t.x-cx, ly=t.y-cy;
       const cos=Math.cos(-el.rot),sin=Math.sin(-el.rot);
       const px=lx*cos-ly*sin, py=lx*sin+ly*cos;
@@ -531,11 +597,17 @@ editor.addEventListener('pointerdown',e=>{
           startAngle:angleTo(sx,sy,el), startRot:el.rot};
     editor.setPointerCapture(e.pointerId); return;
   }
-  const el=hitElement(sx,sy);
+  let el=hitElement(sx,sy);
   if(el){
+    // Alt-drag clones the element and drags the copy (Figma/Illustrator style)
+    if(e.altKey){
+      const clone={...cloneEl(el), id:nextId++, name:el.name};
+      state.elements.push(clone);
+      el=clone; renderLayers();
+    }
     selectElement(el);
     const t=toTile(sx,sy);
-    drag={mode:'move',el,offx:t.x-el.x,offy:t.y-el.y};
+    drag={mode:'move',el,offx:t.x-el.x,offy:t.y-el.y,cloned:e.altKey};
   }else{
     selectElement(null);
     drag={mode:'pan',startPan:{...state.pan},sx,sy};
@@ -554,6 +626,11 @@ editor.addEventListener('pointermove',e=>{
   if(drag.mode==='move'){
     const t=toTile(sx,sy);
     let nx=t.x-drag.offx, ny=t.y-drag.offy;
+    // snap to the grid lattice in Grid mode
+    if(state.repeat==='grid'){
+      const step=state.tile/GRID_DIV;
+      nx=Math.round(nx/step)*step; ny=Math.round(ny/step)*step;
+    }
     // keep center wrapped within [0,tile)
     nx=((nx%state.tile)+state.tile)%state.tile;
     ny=((ny%state.tile)+state.tile)%state.tile;
@@ -622,7 +699,7 @@ function snapshot(){
   return {
     elements: state.elements.map(cloneEl),
     selIds: state.selection.map(e=>e.id),
-    tile: state.tile, bg: state.bg, nextId
+    tile: state.tile, bg: state.bg, repeat: state.repeat, nextId
   };
 }
 function commit(){
@@ -636,13 +713,14 @@ function commit(){
 function restore(snap){
   nextId = snap.nextId;
   state.elements = snap.elements.map(cloneEl);
-  state.tile = snap.tile; state.bg = snap.bg;
+  state.tile = snap.tile; state.bg = snap.bg; state.repeat = snap.repeat||'free';
   state.selection = state.elements.filter(e=>snap.selIds.includes(e.id));
   state.selected = state.selection.length===1 ? state.selection[0] : null;
   // sync dependent UI
   document.getElementById('tileSize').value = state.tile;
   document.getElementById('tileVal').textContent = state.tile;
   document.querySelectorAll('.sw').forEach(sw=>sw.classList.toggle('sel', sw.dataset.bg===state.bg));
+  document.querySelectorAll('.rep').forEach(b=>b.classList.toggle('sel', b.dataset.rep===state.repeat));
   document.getElementById('hint').style.display = state.elements.length ? 'none' : '';
   updateTransformPanel(); renderLayers(); draw();
 }
@@ -970,6 +1048,14 @@ bgs.forEach((c,i)=>{
     s.classList.add('sel'); draw(); commit();
   };
   bgBox.appendChild(s);
+});
+
+/* ---------- repeat selector ---------- */
+document.getElementById('repeatSel').addEventListener('click',e=>{
+  const btn=e.target.closest('.rep'); if(!btn)return;
+  state.repeat=btn.dataset.rep;
+  document.querySelectorAll('.rep').forEach(b=>b.classList.toggle('sel',b===btn));
+  draw(); commit();
 });
 
 /* ---------- tile size ---------- */
