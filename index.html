@@ -69,7 +69,7 @@
 
   /* upload */
   .drop{
-    border:1px dashed var(--line-strong);border-radius:10px;padding:22px 14px;text-align:center;
+    display:block;border:1px dashed var(--line-strong);border-radius:10px;padding:22px 14px;text-align:center;
     cursor:pointer;transition:.15s;background:var(--white)}
   .drop:hover,.drop.drag{border-color:var(--accent);background:#fff}
   .drop .ico{font-size:20px;display:block;margin-bottom:8px;opacity:.5}
@@ -147,8 +147,12 @@
   .zoombar{position:absolute;left:16px;bottom:16px;display:flex;gap:6px;align-items:center;
            background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 6px}
   .zoombar button{width:24px;height:24px;border:none;background:none;cursor:pointer;font-family:var(--mono);
-                  font-size:14px;color:var(--ink);border-radius:50%}
+                  font-size:14px;color:var(--ink);border-radius:50%;
+                  display:inline-flex;align-items:center;justify-content:center}
   .zoombar button:hover{background:var(--bg)}
+  .zoombar.recenter{left:auto;right:16px;padding:5px}
+  .zoombar.recenter button{color:var(--ink-soft)}
+  .zoombar.recenter button:hover{color:var(--accent);background:var(--bg)}
   .zoombar .z{font-family:var(--mono);font-size:11px;color:var(--ink-soft);min-width:42px;text-align:center}
 
   .foot{margin-top:auto;padding:16px;border-top:1px solid var(--line)}
@@ -204,7 +208,15 @@
       <button id="zoomOut">−</button>
       <span class="z mono" id="zoomVal">100%</span>
       <button id="zoomIn">+</button>
-      <button id="zoomFit" title="Fit">⊡</button>
+    </div>
+    <div class="zoombar recenter">
+      <button id="zoomFit" title="Recenter canvas">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/>
+          <path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/>
+        </svg>
+      </button>
     </div>
   </main>
 
@@ -687,10 +699,6 @@ const presetSVGs={
   square:'<rect x="12" y="12" width="40" height="40" rx="3"/>',
   triangle:'<path d="M32 10 56 54 8 54Z"/>',
   diamond:'<path d="M32 8 56 32 32 56 8 32Z"/>',
-  cross:'<path d="M26 8h12v18h18v12H38v18H26V38H8V26h18z"/>',
-  ring:'<path d="M32 10a22 22 0 100 44 22 22 0 100-44zm0 12a10 10 0 110 20 10 10 0 110-20z"/>',
-  star:'<path d="M32 8l6 16h17l-14 10 5 17-14-10-14 10 5-17-14-10h17z"/>',
-  blob:'<path d="M32 8c12 0 22 6 22 18s-4 16-12 22-22 6-28-4 0-22 6-30 6-6 12-6z"/>',
 };
 const presetBox=document.getElementById('presets');
 Object.entries(presetSVGs).forEach(([k,path])=>{
