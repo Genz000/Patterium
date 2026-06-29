@@ -152,6 +152,13 @@
                   font-size:14px;color:var(--ink);border-radius:50%;
                   display:inline-flex;align-items:center;justify-content:center}
   .zoombar button:hover{background:var(--bg)}
+  .histbar{position:absolute;left:16px;top:16px;display:flex;gap:4px;align-items:center;
+           background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 6px}
+  .histbar button{width:26px;height:26px;border:none;background:none;cursor:pointer;color:var(--ink);
+                  border-radius:50%;display:inline-flex;align-items:center;justify-content:center;transition:.12s}
+  .histbar button:hover:not(:disabled){background:var(--bg);color:var(--accent)}
+  .histbar button:disabled{opacity:.28;cursor:not-allowed}
+  .histbar .hsep{width:1px;height:16px;background:var(--line)}
   .zoombar.recenter{left:auto;right:16px;padding:5px}
   .zoombar.recenter button{color:var(--ink-soft)}
   .zoombar.recenter button:hover{color:var(--accent);background:var(--bg)}
@@ -224,6 +231,19 @@
   <main class="stage">
     <canvas id="editor"></canvas>
     <div class="hint" id="hint">Upload an element to begin · elements wrap across edges for seamless tiling</div>
+    <div class="histbar">
+      <button id="undoBtn" title="Undo (Ctrl+Z)" disabled>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 7L4 12l5 5"/><path d="M4 12h11a5 5 0 0 1 5 5v0"/></svg>
+      </button>
+      <span class="hsep"></span>
+      <button id="redoBtn" title="Redo (Ctrl+Shift+Z)" disabled>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 7l5 5-5 5"/><path d="M20 12H9a5 5 0 0 0-5 5v0"/></svg>
+      </button>
+    </div>
     <div class="zoombar">
       <button id="zoomOut">−</button>
       <span class="z mono" id="zoomVal">100%</span>
@@ -306,6 +326,7 @@
 <div id="ctxMenu" class="ctx-menu" hidden>
   <button data-act="duplicate"><span class="ci">⧉</span>Duplicate</button>
   <button data-act="group" id="ctxGroup"><span class="ci">⊞</span>Group <em id="ctxGroupN"></em></button>
+  <button data-act="ungroup" id="ctxUngroup"><span class="ci">⊟</span>Ungroup</button>
   <div class="ctx-sep"></div>
   <button data-act="delete" class="danger"><span class="ci">✕</span>Delete</button>
 </div>
@@ -332,6 +353,8 @@ const state = {
   zoom: 1,
   pan: {x:0, y:0},
   view: {w:0, h:0},
+  history: [],           // undo/redo stack of state snapshots
+  histIndex: -1,
 };
 let nextId = 1;
 
@@ -552,7 +575,10 @@ editor.addEventListener('pointermove',e=>{
     draw();
   }
 });
-editor.addEventListener('pointerup',e=>{ drag=null; try{editor.releasePointerCapture(e.pointerId)}catch(_){}});
+editor.addEventListener('pointerup',e=>{
+  if(drag && (drag.mode==='move'||drag.mode==='scale'||drag.mode==='rotate')) commit();
+  drag=null; try{editor.releasePointerCapture(e.pointerId)}catch(_){}
+});
 editor.addEventListener('pointerleave',()=>{ if(drag&&drag.mode==='pan')drag=null; });
 
 function updateCursor(sx,sy){
@@ -589,6 +615,54 @@ function updateTransformPanel(){
     l.classList.toggle('sel', state.selection.some(e=>e.id==l.dataset.id)));
   syncPanel();
 }
+
+/* ---------- undo / redo history ---------- */
+function cloneEl(e){ return {...e, children: e.children ? e.children.map(c=>({...c})) : undefined}; }
+function snapshot(){
+  return {
+    elements: state.elements.map(cloneEl),
+    selIds: state.selection.map(e=>e.id),
+    tile: state.tile, bg: state.bg, nextId
+  };
+}
+function commit(){
+  clearTimeout(nudgeTimer);
+  state.history = state.history.slice(0, state.histIndex+1);
+  state.history.push(snapshot());
+  if(state.history.length>80){ state.history.shift(); }
+  state.histIndex = state.history.length-1;
+  updateHistButtons();
+}
+function restore(snap){
+  nextId = snap.nextId;
+  state.elements = snap.elements.map(cloneEl);
+  state.tile = snap.tile; state.bg = snap.bg;
+  state.selection = state.elements.filter(e=>snap.selIds.includes(e.id));
+  state.selected = state.selection.length===1 ? state.selection[0] : null;
+  // sync dependent UI
+  document.getElementById('tileSize').value = state.tile;
+  document.getElementById('tileVal').textContent = state.tile;
+  document.querySelectorAll('.sw').forEach(sw=>sw.classList.toggle('sel', sw.dataset.bg===state.bg));
+  document.getElementById('hint').style.display = state.elements.length ? 'none' : '';
+  updateTransformPanel(); renderLayers(); draw();
+}
+function undo(){ if(state.histIndex>0){ state.histIndex--; restore(state.history[state.histIndex]); updateHistButtons(); } }
+function redo(){ if(state.histIndex<state.history.length-1){ state.histIndex++; restore(state.history[state.histIndex]); updateHistButtons(); } }
+function updateHistButtons(){
+  document.getElementById('undoBtn').disabled = state.histIndex<=0;
+  document.getElementById('redoBtn').disabled = state.histIndex>=state.history.length-1;
+}
+document.getElementById('undoBtn').onclick=undo;
+document.getElementById('redoBtn').onclick=redo;
+window.addEventListener('keydown',e=>{
+  if(['INPUT','TEXTAREA'].includes(document.activeElement.tagName))return;
+  const ctrl=e.ctrlKey||e.metaKey;
+  if(ctrl && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); }
+  else if(ctrl && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); }
+});
+let nudgeTimer=null;
+function commitDebounced(){ clearTimeout(nudgeTimer); nudgeTimer=setTimeout(commit,350); }
+
 function syncPanel(){
   const el=state.selected;
   if(el){
@@ -617,6 +691,8 @@ document.getElementById('opacity').addEventListener('input',e=>{
   state.selected.opacity=+e.target.value/100;
   document.getElementById('opaVal').textContent=e.target.value; draw();
 });
+['scale','rotate','opacity'].forEach(id=>
+  document.getElementById(id).addEventListener('change',()=>{ if(state.selected)commit(); }));
 
 document.getElementById('bringFwd').onclick=()=>reorder(1);
 document.getElementById('sendBack').onclick=()=>reorder(-1);
@@ -625,16 +701,16 @@ function reorder(dir){
   const i=state.elements.indexOf(el); const j=i+dir;
   if(j<0||j>=state.elements.length)return;
   state.elements.splice(i,1); state.elements.splice(j,0,el);
-  renderLayers(); draw();
+  renderLayers(); draw(); commit();
 }
 document.getElementById('dupBtn').onclick=()=>{
   const el=state.selected; if(!el)return;
   const c={...el,id:nextId++,x:(el.x+30)%state.tile,y:(el.y+30)%state.tile,name:el.name};
-  state.elements.push(c); renderLayers(); selectElement(c); draw();
+  state.elements.push(c); renderLayers(); selectElement(c); draw(); commit();
 };
 document.getElementById('centerEl').onclick=()=>{
   if(!state.selected)return;
-  state.selected.x=state.tile/2; state.selected.y=state.tile/2; draw();
+  state.selected.x=state.tile/2; state.selected.y=state.tile/2; draw(); commit();
 };
 
 /* ---------- keyboard ---------- */
@@ -653,7 +729,7 @@ window.addEventListener('keydown',e=>{
     if(moved){
       state.selected.x=((state.selected.x%state.tile)+state.tile)%state.tile;
       state.selected.y=((state.selected.y%state.tile)+state.tile)%state.tile;
-      e.preventDefault(); draw();
+      e.preventDefault(); draw(); commitDebounced();
     }
   }
 });
@@ -674,6 +750,7 @@ function addImage(img,name){
   state.elements.push(el);
   renderLayers(); selectElement(el); draw();
   document.getElementById('hint').style.display='none';
+  commit();
 }
 function removeElement(el){
   state.elements=state.elements.filter(x=>x!==el);
@@ -681,6 +758,7 @@ function removeElement(el){
   if(state.selected===el)state.selected=null;
   updateTransformPanel(); renderLayers(); draw();
   if(!state.elements.length)document.getElementById('hint').style.display='';
+  commit();
 }
 function renderLayers(){
   const box=document.getElementById('layers');
@@ -723,9 +801,11 @@ function openLayerMenu(el,ev){
   // if right-clicked layer isn't part of the current multi-selection, select just it
   if(!state.selection.includes(el)){ selectElement(el); renderLayers(); draw(); }
   const multi=state.selection.length>=2;
-  const grpBtn=document.getElementById('ctxGroup');
-  grpBtn.disabled=!multi;
+  document.getElementById('ctxGroup').disabled=!multi;
   document.getElementById('ctxGroupN').textContent=multi?'('+state.selection.length+')':'';
+  // Ungroup enabled only if a selected layer is actually a group
+  const hasGroup=state.selection.some(e=>e.children&&e.children.length);
+  document.getElementById('ctxUngroup').disabled=!hasGroup;
   ctxMenu.hidden=false;
   // clamp within viewport
   const mw=ctxMenu.offsetWidth, mh=ctxMenu.offsetHeight;
@@ -738,6 +818,7 @@ ctxMenu.addEventListener('click',e=>{
   const act=btn.dataset.act;
   if(act==='duplicate')duplicateSelection();
   else if(act==='group')groupSelection();
+  else if(act==='ungroup')ungroupSelection();
   else if(act==='delete')deleteSelection();
   closeLayerMenu();
 });
@@ -754,7 +835,7 @@ function duplicateSelection(){
     state.elements.push(c); dups.push(c);
   });
   state.selection=dups; state.selected=dups.length===1?dups[0]:null;
-  updateTransformPanel(); renderLayers(); draw();
+  updateTransformPanel(); renderLayers(); draw(); commit();
 }
 function deleteSelection(){
   if(!state.selection.length)return;
@@ -763,6 +844,7 @@ function deleteSelection(){
   state.selection=[]; state.selected=null;
   updateTransformPanel(); renderLayers(); draw();
   if(!state.elements.length)document.getElementById('hint').style.display='';
+  commit();
 }
 /* Group = flatten the selected layers into one combined element */
 function groupSelection(){
@@ -789,15 +871,46 @@ function groupSelection(){
     cx.restore();
   });
   const set=new Set(sel);
+  const cx0=(minX+maxX)/2, cy0=(minY+maxY)/2;
+  // keep originals (as offsets from group centre) so the group can be un-grouped later
+  const children=sel.map(el=>({...cloneEl(el), relx:el.x-cx0, rely:el.y-cy0}));
   const img=new Image();
   img.onload=()=>{
     state.elements=state.elements.filter(e=>!set.has(e));
     const group={id:nextId++, img, name:'group',
-      x:(minX+maxX)/2, y:(minY+maxY)/2, scale:1, w, h, rot:0, opacity:1};
+      x:cx0, y:cy0, scale:1, w, h, rot:0, opacity:1, children};
     state.elements.push(group);
-    selectElement(group); renderLayers(); draw();
+    selectElement(group); renderLayers(); draw(); commit();
   };
   img.src=cv.toDataURL();
+}
+/* Ungroup = expand a baked group back into its original child elements */
+function ungroupSelection(){
+  const groups=state.elements.filter(e=>state.selection.includes(e)&&e.children&&e.children.length);
+  if(!groups.length)return;
+  const T=state.tile;
+  const newSel=[];
+  groups.forEach(g=>{
+    const idx=state.elements.indexOf(g);
+    const f=g.scale;                       // overall scale applied to the group
+    const cos=Math.cos(g.rot), sin=Math.sin(g.rot);
+    const kids=g.children.map(ch=>{
+      const rx=ch.relx*f, ry=ch.rely*f;
+      const wx=g.x+(rx*cos-ry*sin), wy=g.y+(rx*sin+ry*cos);
+      const sc=ch.scale*f;
+      const e={...ch, id:nextId++,
+        x:((wx%T)+T)%T, y:((wy%T)+T)%T,
+        scale:sc, w:ch.img.naturalWidth*sc, h:ch.img.naturalHeight*sc,
+        rot:ch.rot+g.rot};
+      delete e.relx; delete e.rely;
+      return e;
+    });
+    state.elements.splice(idx,1,...kids);  // replace group in place, preserving z-order
+    newSel.push(...kids);
+  });
+  state.selection=newSel;
+  state.selected=newSel.length===1?newSel[0]:null;
+  updateTransformPanel(); renderLayers(); draw(); commit();
 }
 
 /* ---------- file upload ---------- */
@@ -846,13 +959,15 @@ const bgs=['#ffffff','#eceae6','#111110','#ff4a1c','#f6e7c1','#cfe0d8','transpar
 const bgBox=document.getElementById('bgSwatches');
 bgs.forEach((c,i)=>{
   const s=document.createElement('div');s.className='sw'+(i===0?' sel':'');
+  const val=c==='transparent'?'rgba(0,0,0,0)':c;
+  s.dataset.bg=val;
   if(c==='transparent'){
     s.style.background='repeating-conic-gradient(#ccc 0 25%,#fff 0 50%) 0/12px 12px';
   }else s.style.background=c;
   s.onclick=()=>{
-    state.bg=c==='transparent'?'rgba(0,0,0,0)':c;
+    state.bg=val;
     document.querySelectorAll('.sw').forEach(x=>x.classList.remove('sel'));
-    s.classList.add('sel'); draw();
+    s.classList.add('sel'); draw(); commit();
   };
   bgBox.appendChild(s);
 });
@@ -866,6 +981,7 @@ document.getElementById('tileSize').addEventListener('input',e=>{
   document.getElementById('tileVal').textContent=nw;
   draw();
 });
+document.getElementById('tileSize').addEventListener('change',commit);
 
 /* ---------- auto arrange ---------- */
 document.getElementById('scatter').onclick=()=>{
@@ -874,7 +990,7 @@ document.getElementById('scatter').onclick=()=>{
     el.x=Math.random()*state.tile; el.y=Math.random()*state.tile;
     el.rot=Math.random()*Math.PI*2;
   });
-  draw();
+  draw(); commit();
 };
 document.getElementById('gridFill').onclick=()=>{
   const n=state.elements.length; if(!n)return;
@@ -884,7 +1000,7 @@ document.getElementById('gridFill').onclick=()=>{
     const c=i%cols, r=Math.floor(i/cols);
     el.x=cw*(c+0.5); el.y=ch*(r+0.5); el.rot=0;
   });
-  draw();
+  draw(); commit();
 };
 
 /* ---------- zoom controls ---------- */
@@ -919,12 +1035,14 @@ document.getElementById('btnClear').onclick=()=>{
   if(state.elements.length && !confirm('Clear all elements?'))return;
   state.elements=[]; selectElement(null); renderLayers(); draw();
   document.getElementById('hint').style.display='';
+  commit();
 };
 
 /* ---------- init ---------- */
 resizeView();
 setZoom(Math.min((state.view.w-120)/state.tile,(state.view.h-120)/state.tile,1));
 selectElement(null);
+commit();              // baseline snapshot for undo/redo
 </script>
 </body>
 </html>
