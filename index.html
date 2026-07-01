@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Patternium — Seamless Pattern Studio</title>
+<title>Patterium — Seamless Pattern Studio</title>
 <style>
   :root{
     --bg:#eceae6;
@@ -258,7 +258,7 @@
     <svg class="mark" viewBox="0 0 100 100" fill="var(--ink)">
       <path d="M38 8h24v30h30v24H62v30H38V62H8V38h30z"/>
     </svg>
-    <span class="brand">PATTERNIUM</span>
+    <span class="brand">PATTERIUM</span>
   </div>
   <span class="tag">Seamless&nbsp;Pattern&nbsp;Studio</span>
   <div class="spacer"></div>
@@ -433,7 +433,7 @@
 
 <script>
 /* ============================================================
-   Patternium — seamless pattern tile editor
+   Patterium — seamless pattern tile editor
    Core idea: the tile is a torus. Every element is drawn into
    the tile AND wrapped across all 8 neighbor offsets so anything
    crossing an edge reappears on the opposite side → no seams.
@@ -1133,7 +1133,7 @@ Object.entries(presetSVGs).forEach(([k,path])=>{
 });
 
 /* ---------- bg swatches ---------- */
-const bgs=['#ffffff','#eceae6','#111110','#ff4a1c','#f6e7c1','#cfe0d8','transparent'];
+const bgs=['#ffffff','#eceae6','#ff4a1c','#f6e7c1','#cfe0d8','transparent'];
 const bgBox=document.getElementById('bgSwatches');
 bgs.forEach((c,i)=>{
   const s=document.createElement('div');s.className='sw'+(i===0?' sel':'');
@@ -1308,7 +1308,7 @@ function buildSVG(size){
 function doExport(){
   const size=Math.min(8192,Math.max(16,Math.round(exportState.size||state.tile)));
   const fmt=exportState.format;
-  const name=`patternium-${state.repeat}-${size}px`;
+  const name=`patterium-${state.repeat}-${size}px`;
   if(fmt==='svg'){
     downloadBlob(new Blob([buildSVG(size)],{type:'image/svg+xml'}), name+'.svg');
   }else{

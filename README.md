@@ -1,8 +1,8 @@
-# Patternium
+# Patterium
 
 **Seamless Pattern Studio** — a browser-based tool for designing perfectly tileable pattern tiles.
 
-🔗 **[Live app](https://genz000.github.io/Patternium/)**
+🔗 **[Live app](https://genz000.github.io/Patterium/)**
 
 ## What it does
 
@@ -10,15 +10,17 @@ The tile is treated as a torus: every element is drawn into the tile *and* wrapp
 
 ## Features
 
-- **Upload** images (PNG · SVG · JPG) via drop zone, file picker, or drag-and-drop, plus 8 built-in vector shapes
+- **Upload** images (PNG · SVG · JPG) via drop zone, file picker, or drag-and-drop, plus built-in vector shapes
 - **Arrange** elements freely — they wrap live across tile edges
 - **Resize** with corner handles or the Scale slider
 - **Rotate** with the rotor handle or the Rotation slider
-- Opacity, layer ordering, duplicate, center
+- Alt-drag to duplicate; multi-select, group / ungroup, and drag-and-drop layer ordering
+- Opacity, undo / redo (Ctrl+Z), center
+- **Repeat modes**: Free, Grid, Half-drop, Brick
 - **Auto-arrange**: grid fill or scatter
-- Adjustable tile size (128–1024px), background swatches incl. transparent
+- Adjustable tile size (128–1024px), background swatches, transparent, and a free color picker
 - Zoom / pan canvas
-- **Export** a clean, perfectly tileable PNG at full resolution
+- **Export** as PNG, JPG, or SVG at a custom size
 
 ## Shortcuts
 
