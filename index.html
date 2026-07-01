@@ -1326,6 +1326,14 @@ document.getElementById('btnClear').onclick=()=>{
   commit();
 };
 
+/* ---------- warn before leaving with unsaved work ---------- */
+window.addEventListener('beforeunload',e=>{
+  if(state.elements.length){
+    e.preventDefault();
+    e.returnValue='';   // browsers show their own "leave site?" dialog
+  }
+});
+
 /* ---------- init ---------- */
 resizeView();
 setZoom(Math.min((state.view.w-120)/state.tile,(state.view.h-120)/state.tile,1));
